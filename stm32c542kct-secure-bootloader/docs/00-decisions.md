@@ -26,26 +26,32 @@ Standard de facto per il secure boot su Cortex-M. Chiave pubblica 64 byte
 
 ---
 
-## 3. Crypto — ~~acceleratori hardware~~ ⚠️ DA RIVEDERE
+## 3. Crypto — X-CUBE-CRYPTOLIB di ST, ECDSA in software
 
-> **Aggiornamento 2026-08-26.** Il `STM32C542` **non ha il PKA** (è presente
-> solo sulla variante `STM32C5A3`). Vedi [`04-silicon-facts.md`](04-silicon-facts.md).
-> La premessa di questa decisione — accelerare in hardware la verifica ECDSA —
-> non regge: senza PKA la verifica della firma va fatta in software.
+> **Storia della decisione.** Inizialmente si erano scelti gli acceleratori
+> hardware per la verifica ECDSA. Il `STM32C542` però **non ha il PKA** (solo
+> la variante `C5A3` ce l'ha), quindi la verifica su curva va fatta in
+> software. Vedi [`04-silicon-facts.md`](04-silicon-facts.md).
 
-Cosa resta valido dell'hardware:
+Libreria ST, gratuita sotto licenza **SLA0048**, integrata con l'ecosistema
+STM32Cube e quindi coerente con la scelta di CubeIDE (§1).
 
-- **HASH** accelera lo SHA-256 sull'immagine, che al boot è il lavoro più
-  pesante in termini di byte processati. Questo va usato.
-- **TRNG** utile se servirà un challenge per lo `0x27` SecurityAccess UDS.
+**⚠️ Da verificare per primo:** che X-CUBE-CRYPTOLIB **supporti già la serie
+C5**, uscita a marzo 2026. Non è stato possibile confermarlo. Se il supporto
+non c'è, il ripiego è micro-ecc (circa 6 KB, solo ECC) o Mbed TLS ridotta.
+
+**Uso previsto dell'hardware disponibile:**
+- **HASH** per lo SHA-256 sull'immagine — è il lavoro più pesante al boot in
+  byte processati, e questo sì è accelerato.
+- **TRNG** se servirà un challenge per lo `0x27` SecurityAccess UDS.
 - **AES** inutilizzato finché l'immagine resta in chiaro (§4).
 
-**Nuova scelta da fare:** quale implementazione software per l'ECDSA P-256.
-Decisione in sospeso.
-
-**Effetto collaterale positivo:** una implementazione software è compilabile
-anche su PC, quindi la nota trasversale sui test in fondo a questo documento
-si risolve da sola — i vettori NIST/Wycheproof diventano eseguibili sull'host.
+**Conseguenza sui test.** La cryptolib ST non compila su PC, quindi la verifica
+firma resta non testabile fuori dal target. La mitigazione descritta in fondo a
+questo documento diventa quindi necessaria, non opzionale: interfaccia
+`inc/crypto.h` con un backend software di sola verifica usato **esclusivamente
+nei test su host**, e un test di coerenza sul target che confronta i due
+risultati sugli stessi vettori.
 
 ## 4. Confidenzialità — nessuna, immagine in chiaro
 
@@ -68,9 +74,16 @@ immagine non si avvia.
 
 **✅ Confermato:** 256 KB di flash **dual-bank**. Il layout A/B è praticabile.
 
-**Vincolo che ne deriva:** con 32 KB di bootloader restano circa **96 KB per
-slot applicativo**. Da validare che l'applicazione ci stia. Ripartizione
-proposta in [`04-silicon-facts.md`](04-silicon-facts.md).
+**Ripartizione fissata:** bootloader 48 KB, slot A e B da **80 KB ciascuno**,
+48 KB di metadati e spare. Ogni banco è 128 KB e bootloader più slot A devono
+starci insieme, da cui gli 80 KB e non 88. Indirizzi in
+[`03-memory-map.md`](03-memory-map.md).
+
+**Vincolo per l'applicazione: 80 KB.** Da validare.
+
+**⚠️ Resta aperto** da quale indirizzo gira l'applicazione, visto che i due
+slot stanno a indirizzi diversi: due build distinte, swap fisico alla MCUboot,
+o bank swap hardware. È il nodo da sciogliere prima del formato immagine.
 
 **Conseguenze:**
 - Serve un descrittore persistente che indichi lo slot attivo e lo stato
@@ -163,7 +176,7 @@ scrittura alla flash può riportarlo indietro.
 
 ## Nota trasversale sui test
 
-Le scelte §1 (CubeIDE) e §3 (crypto in hardware) insieme comportano che il
+Le scelte §1 (CubeIDE) e §3 (cryptolib ST) insieme comportano che il
 codice di verifica firma non è eseguibile su PC, quindi non è testabile con i
 vettori ufficiali NIST/Wycheproof fuori dal target.
 

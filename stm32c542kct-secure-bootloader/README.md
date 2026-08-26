@@ -48,9 +48,9 @@ con motivazioni e conseguenze:
 |---|---|
 | Toolchain | STM32CubeIDE |
 | Firma | ECDSA P‑256 + SHA‑256 |
-| Crypto | ⚠️ da rivedere — il pezzo non ha il PKA |
+| Crypto | X‑CUBE‑CRYPTOLIB (ECDSA in software: niente PKA) |
 | Confidenzialità | Nessuna — immagine in chiaro, solo firmata |
-| Layout | Dual‑bank A/B |
+| Layout | Dual‑bank A/B — boot 48 KB, slot 80 KB |
 | Canale di update | CAN / CAN‑FD, UDS su ISO‑TP |
 | TrustZone | Disabilitata, tutto Secure |
 | Root key | Hash SHA‑256 in OTP, chiave in flash |
@@ -61,11 +61,12 @@ con motivazioni e conseguenze:
 Tre punti restano da chiarire prima di scrivere codice, e sono segnati con ⚠️
 nel documento delle decisioni:
 
-1. ❌ **PKA assente** sul C542 — la verifica ECDSA va fatta in software.
-   Resta da scegliere quale implementazione.
-2. ✅ **Flash 256 KB dual‑bank**: A/B praticabile, circa 96 KB per slot.
-   Da validare che l'applicazione ci stia.
-3. ✅ **OTP 4.5 KB**: abbondante per hash della root key e contatore.
+1. ⚠️ **X‑CUBE‑CRYPTOLIB supporta la serie C5?** Uscita a marzo 2026, non
+   confermato. Piano B: micro‑ecc o Mbed TLS ridotta.
+2. ⚠️ **Da quale indirizzo gira l'applicazione?** I due slot stanno a
+   indirizzi diversi. Il nodo da sciogliere prima del formato immagine.
+3. ⚠️ **L'applicazione sta in 80 KB?** Se no, il dual‑bank A/B non regge.
+4. ⚠️ **Dimensione della pagina di flash**, per la granularità di WRP e HDP.
 
 Dettagli e ripartizione della flash in [`docs/04-silicon-facts.md`](docs/04-silicon-facts.md).
 
@@ -88,8 +89,7 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
 - [x] Fissare le decisioni tecniche (`docs/00-decisions.md`)
 - [x] Raccogliere i dati del silicio (`docs/04-silicon-facts.md`)
 - [ ] Riconfermare i dati sul PDF ufficiale del datasheet
-- [ ] Scegliere l'implementazione ECDSA software
 - [ ] Scrivere il threat model (`docs/01-threat-model.md`)
 - [ ] Definire il formato dell'header immagine (`docs/02-image-format.md`)
-- [ ] Definire la mappa di memoria (`docs/03-memory-map.md`)
+- [x] Definire la mappa di memoria (`docs/03-memory-map.md`)
 - [ ] Impostare la toolchain e un build "hello world" che lampeggia un LED
