@@ -39,19 +39,31 @@ stm32c542kct-secure-bootloader/
 
 ---
 
-## Decisioni ancora da prendere
+## Scelte fatte
 
-Prima di scrivere codice servono alcune scelte. Sono raccolte in
-[`docs/00-open-questions.md`](docs/00-open-questions.md):
+Le decisioni tecniche sono fissate in [`docs/00-decisions.md`](docs/00-decisions.md),
+con motivazioni e conseguenze:
 
-1. **Toolchain**: STM32CubeIDE, CMake + arm-none-eabi-gcc, o Makefile puro?
-2. **Crypto**: usare l'acceleratore hardware del C5, la libreria ST, o
-   una libreria portabile (es. Mbed TLS ridotta / micro-ecc / tinycrypt)?
-3. **Algoritmo di firma**: ECDSA P‑256 + SHA‑256 (consigliato) oppure
-   Ed25519 / RSA‑2048?
-4. **Layout memoria**: dual‑bank A/B oppure single slot + staging area?
-5. **Canale di update**: UART, USB DFU, CAN, o SD/SPI‑flash esterna?
-6. **RTOS o bare‑metal** nell'applicazione (impatta lo startup Non‑Secure).
+| Ambito | Scelta |
+|---|---|
+| Toolchain | STM32CubeIDE |
+| Firma | ECDSA P‑256 + SHA‑256 |
+| Crypto | Acceleratori hardware (PKA / AES / HASH / RNG) |
+| Confidenzialità | Nessuna — immagine in chiaro, solo firmata |
+| Layout | Dual‑bank A/B |
+| Canale di update | CAN / CAN‑FD, UDS su ISO‑TP |
+| TrustZone | Disabilitata, tutto Secure |
+| Root key | Hash SHA‑256 in OTP, chiave in flash |
+| Chiave privata | File offline su macchina dedicata |
+| Rotazione chiavi | Nessuna, chiave singola |
+| Anti‑rollback | Contatore monotono in OTP |
+
+Tre punti restano da chiarire prima di scrivere codice, e sono segnati con ⚠️
+nel documento delle decisioni:
+
+1. **Il pezzo ha il PKA?** Se manca, la scelta sulla crypto va rivista.
+2. **La Flash basta per il dual‑bank?** Servono due slot applicativi completi.
+3. **Quanti incrementi anti‑rollback** dimensionare in OTP.
 
 ---
 
@@ -69,7 +81,8 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
 
 ## Prossimi passi
 
-- [ ] Compilare `docs/00-open-questions.md` con le scelte
+- [x] Fissare le decisioni tecniche (`docs/00-decisions.md`)
+- [ ] Confermare a datasheet i tre punti aperti qui sopra
 - [ ] Scrivere il threat model (`docs/01-threat-model.md`)
 - [ ] Definire il formato dell'header immagine (`docs/02-image-format.md`)
 - [ ] Definire la mappa di memoria (`docs/03-memory-map.md`)
