@@ -1,34 +1,50 @@
 # Test
 
 ```
-python3 tests/test_image_format.py
+./tests/run_all.sh          # dalla radice del progetto
 ```
 
-31 test, nessuna dipendenza oltre a quelle di `tools/`.
+Serve `gcc`, `libcrypto` (OpenSSL) e il pacchetto in `tools/requirements.txt`.
 
-## Cosa coprono
+| File | |
+|---|---|
+| `vectors.py` | **Il corpus**: 33 vettori, unica fonte per entrambi i test |
+| `test_image_format.py` | Il corpus contro il riferimento Python |
+| `test_differential.py` | Il corpus contro l'implementazione C |
+| `host/` | Banco di prova: backend OpenSSL e runner |
 
-`test_image_format.py` percorre la tabella dei vettori di test di
-[`../docs/02-image-format.md`](../docs/02-image-format.md) e verifica non solo
-che un'immagine malformata venga rifiutata, ma **a quale passo**.
+## Il confronto differenziale
 
-Il passo conta. Un'immagine con `image_size` gonfiato deve cadere al passo 4,
-sui controlli di limite, non al passo 8 sulla firma: se cadesse al passo 8
-vorrebbe dire che il bootloader ha già letto fuori area. Un test che
-controllasse solo "rifiutata" lascerebbe passare quel bug.
+`test_differential.py` compila **`src/verify.c`, il codice vero del
+bootloader**, non una riscrittura, mettendogli sotto un backend OpenSSL al
+posto di X‑CUBE‑CRYPTOLIB. Poi gli dà lo stesso corpus del riferimento Python
+e pretende che i due diano lo stesso codice di esito su ogni vettore.
 
-`CHeaderConsistencyTest` rilegge i `#define` da `inc/image_header.h` e
-`inc/memory_map.h` e li confronta con le costanti Python. Se divergono, il tool
-firmerebbe su un layout e il bootloader ne verificherebbe un altro, e il guasto
-si manifesterebbe solo sul target.
+È la mitigazione prevista dalla nota sui test in `00-decisions.md`: la
+cryptolib ST non compila su PC, e senza l'interfaccia `inc/crypto.h` con un
+backend alternativo il codice di verifica non sarebbe testabile fuori dal
+target — proprio il codice che non vuoi che abbia bug.
+
+Ha già ripagato il suo costo: alla prima esecuzione ha trovato che il C
+respingeva un `image_size` oltre i byte leggibili al passo 4, mentre il Python
+tirava avanti fino al passo 8. Il C aveva ragione, e il riferimento è stato
+corretto.
+
+## Perché i test controllano il passo, non solo l'esito
+
+Un'immagine con `image_size` gonfiato deve cadere al passo 4, sui controlli di
+limite, non al passo 8 sulla firma. Se cadesse sulla firma vorrebbe dire che il
+bootloader ha già letto oltre la fine dell'area. Un test che verificasse solo
+"rifiutata" lascerebbe passare esattamente quel bug.
+
+`test_il_corpus_copre_tutti_i_codici` verifica che ogni passo della specifica
+abbia almeno un vettore che lo fa scattare.
 
 ## Cosa manca ancora
 
-- **Vettori ufficiali ECDSA P‑256** (NIST CAVP, Wycheproof). Vanno scaricati e
-  aggiunti: qui si verifica che la catena regga, non che l'implementazione
-  ECDSA sia corretta sui casi limite.
-- **Test di coerenza sul target**: gli stessi vettori eseguiti contro
-  X‑CUBE‑CRYPTOLIB, per dimostrare che il backend del target e quello host
-  danno lo stesso risultato. È la mitigazione prevista dalla nota sui test in
-  `00-decisions.md`, e senza di essa il backend software resta non collegato a
-  ciò che gira davvero.
+- **Vettori ufficiali ECDSA P‑256** (NIST CAVP, Wycheproof). Qui si verifica
+  che la catena regga e che C e Python concordino, non che l'ECDSA sia
+  corretto sui casi limite.
+- **Esecuzione sul target.** Il confronto differenziale gira su PC con
+  OpenSSL: dimostra che la *logica* è la stessa, non che X‑CUBE‑CRYPTOLIB si
+  comporti come OpenSSL. Lo stesso corpus va fatto girare sul pezzo.

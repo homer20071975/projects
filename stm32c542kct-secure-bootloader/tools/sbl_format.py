@@ -184,6 +184,13 @@ def verify(image, root_pubkey, otp_pubkey_hash, otp_security_version,
     max_payload = area_size - HEADER_SIZE
     if hdr.image_size == 0 or hdr.image_size > max_payload:
         raise VerifyError(4, ERR_IMAGE_SIZE)
+    # image_size deve stare anche nei byte effettivamente leggibili. Sul
+    # target l'area di flash è sempre leggibile per intero, quindi questo
+    # controllo coincide con quello sopra; qui e in ogni contesto in cui il
+    # buffer è più corto dell'area, è ciò che impedisce al passo 11 di
+    # leggere oltre la fine del buffer.
+    if hdr.image_size > len(image) - HEADER_SIZE:
+        raise VerifyError(4, ERR_IMAGE_SIZE)
     if hdr.load_address != area_base:
         raise VerifyError(5, ERR_LOAD_ADDRESS)
     if not (area_base <= hdr.entry_vtor < area_base + area_size) \
@@ -207,8 +214,6 @@ def verify(image, root_pubkey, otp_pubkey_hash, otp_security_version,
 
     # 11: il più costoso per ultimo, ~100 KB da digerire
     payload = image[HEADER_SIZE:HEADER_SIZE + hdr.image_size]
-    if len(payload) != hdr.image_size:
-        raise VerifyError(4, ERR_IMAGE_SIZE)
     if hashlib.sha256(payload).digest() != hdr.payload_sha256:
         raise VerifyError(11, ERR_PAYLOAD_HASH)
 
