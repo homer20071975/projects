@@ -198,6 +198,39 @@ bisogno.
 
 Dettagli in [`03-memory-map.md`](03-memory-map.md).
 
+## 13. Layout — ⚠️ IN RIESAME: A/B oppure esecuzione + staging
+
+L'assetto attuale resta l'A/B di §5 e §12, ma è in valutazione un'alternativa:
+**bootloader + una sola area di esecuzione + un'area di staging**, con copia
+staging → esecuzione dopo la verifica.
+
+| | A/B (§5, §12) | Esecuzione + staging |
+|---|---|---|
+| Spazio per l'applicazione | 80 KB | ~100 KB |
+| Artefatti per release | due, firmati separatamente | uno |
+| Attivazione | istantanea | copia di ~100 KB |
+| Rollback alla versione precedente | sì | no |
+| Scritture flash per aggiornamento | 1× | 2× |
+| Rischio di mattonare | nullo | nullo |
+
+Con l'A/B gli slot scendono a 80 KB perché bootloader e slot A devono stare
+insieme nei 128 KB del banco 1. Lo schema con staging non ha quel vincolo, da
+cui i ~20 KB in più per l'applicazione.
+
+**⚠️ Attenzione tecnica sullo staging:** sugli STM32 dual‑bank non si può
+eseguire codice da un banco mentre lo si cancella o programma. O la routine di
+copia gira dalla SRAM, oppure il layout va disposto in modo da scrivere sempre
+nell'altro banco (bootloader e staging nel banco 1, esecuzione nel banco 2, al
+prezzo di un bootloader da 24 KB). Da confermare sul reference manual del C5.
+
+**Il dato che decide:** in campo, un dispositivo la cui applicazione non parte
+resta interrogabile via CAN? Se sì, il rollback vale poco e i 20 KB in più
+contano di più. Se il modulo sta dietro un gateway che dialoga solo con
+l'applicativo funzionante, il rollback vale molto.
+
+**Verifica in corso da parte del committente.** Fino ad allora resta valido
+l'A/B.
+
 ## Nota trasversale sui test
 
 Le scelte §1 (CubeIDE) e §3 (cryptolib ST) insieme comportano che il
