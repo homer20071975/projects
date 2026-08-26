@@ -30,11 +30,11 @@ Realizzare un bootloader che garantisca:
 stm32c542kct-secure-bootloader/
 ├── README.md          questo file
 ├── docs/              specifiche, threat model, formato immagine
-├── inc/               header pubblici del bootloader
-├── src/               sorgenti C
+├── inc/               image_header.h, memory_map.h
+├── src/               sorgenti C (ancora vuoto)
 ├── linker/            linker script e mappa di memoria
-├── tools/             tool host (firma, packaging, key management)
-└── tests/             test unitari / vettori di test crypto
+├── tools/             sign_image.py e verificatore di riferimento
+└── tests/             31 test sul formato immagine
 ```
 
 ---
@@ -93,5 +93,6 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
 - [x] Scrivere il threat model (`docs/01-threat-model.md`)
 - [x] Definire il formato dell'header immagine (`docs/02-image-format.md`)
 - [x] Definire la mappa di memoria (`docs/03-memory-map.md`)
-- [ ] Scrivere `inc/image_header.h` e il tool di firma in `tools/`
+- [x] Scrivere `inc/image_header.h` e il tool di firma in `tools/`
+- [ ] Aggiungere i vettori ufficiali NIST/Wycheproof per ECDSA P‑256
 - [ ] Impostare la toolchain e un build "hello world" che lampeggia un LED
