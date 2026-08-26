@@ -82,37 +82,66 @@ sufficienti. Resta da fissare il numero definitivo.
 
 ---
 
-## ⚠️ Nodo aperto: da quale indirizzo gira l'applicazione?
+## Indirizzo di esecuzione dell'applicazione — risolto
 
-Slot A e slot B stanno a indirizzi diversi (`0x0800_C000` e `0x0802_0000`). Un
-firmware compilato per un indirizzo non gira all'altro senza accorgimenti.
-Questo è **il punto di design più importante ancora da chiudere**, perché
-condiziona il formato immagine, il tool di firma e la procedura di build.
+Slot A e slot B stanno a indirizzi diversi (`0x0800_C000` e `0x0802_0000`), e un
+firmware linkato per uno non gira all'altro.
 
-Le tre strade possibili:
+**Decisione: due build distinte, una per slot. Nessuno swap.**
 
-### 1. Due build distinte, una per slot
-Il pacchetto di aggiornamento contiene l'immagine linkata per lo slot di
-destinazione, e il bootloader la instrada di conseguenza.
+Scartate le due alternative:
 
-*Pro:* nessuna copia di flash, swap istantaneo, bootloader semplice.
-*Contro:* due artefatti da costruire, firmare e tracciare per ogni release;
-il tool di update deve sapere in quale slot sta andando.
+- **Bank swap hardware** (`SWAP_BANK`) avrebbe dato una sola build a indirizzo
+  fisso, duplicando il bootloader all'inizio dei due banchi. Scartata perché
+  dipende da una funzione del silicio non confermata sul C5, e perché ogni
+  aggiornamento costerebbe una scrittura di option byte.
+- **Swap fisico del contenuto** alla MCUboot avrebbe copiato 80 KB a ogni
+  aggiornamento: logorio della flash, tempi lunghi e una macchina a stati
+  resistente al power loss che è la parte dove si annidano i bug.
 
-### 2. Swap fisico del contenuto (modello MCUboot)
-L'applicazione è sempre linkata all'indirizzo dello slot A. Il bootloader copia
-fisicamente le immagini per portare quella nuova nello slot A.
+### Come funziona
 
-*Pro:* una sola build, un solo artefatto da firmare.
-*Contro:* lo swap richiede tempo e cicli di scrittura flash, e va reso atomico
-rispetto al power loss. Serve un'area di scratch.
+Due linker script e due artefatti per ogni release:
 
-### 3. Bank swap hardware
-Usare il bit di option byte che rimappa i due banchi.
+| Artefatto | Linkato a | Firmato |
+|---|---|---|
+| `app_slot_a.bin` | `0x0800_C000` | sì, separatamente |
+| `app_slot_b.bin` | `0x0802_0000` | sì, separatamente |
 
-*Contro:* il bootloader risiede **dentro** il banco 1, quindi verrebbe
-rimappato anche lui. Va verificato sul reference manual se il C5 offre un
-meccanismo utilizzabile in questa configurazione. Probabilmente non praticabile
-senza spostare il bootloader fuori dai banchi commutabili.
+**Flusso di aggiornamento:**
 
-**Decisione rimandata**, ma va presa prima di scrivere il formato immagine.
+1. Il tool host chiede al dispositivo quale slot è inattivo — UDS `0x22`
+   ReadDataByIdentifier, con un DID dedicato.
+2. Manda l'immagine corrispondente a quello slot, non entrambe: sul CAN
+   viaggiano 80 KB, non 160.
+3. Trasferimento con `0x34` / `0x36` / `0x37`.
+4. Il bootloader scrive nello slot inattivo, verifica firma e versione, e
+   marca lo slot come `pending`.
+5. Al reset tenta l'avvio dello slot `pending`; l'applicazione conferma il
+   proprio avvio e lo stato passa a `confirmed`.
+6. Se la conferma non arriva entro N tentativi, si torna allo slot precedente.
+
+### Il rischio, e come si chiude
+
+Il rischio dello schema a due build è mandare l'immagine sbagliata: un binario
+linkato per lo slot A scritto nello slot B non parte, e il dispositivo resta
+sul vecchio firmware o peggio.
+
+**Mitigazione: l'indirizzo di destinazione va dentro l'header firmato.** Il
+bootloader confronta il campo con lo slot in cui sta scrivendo e rifiuta
+l'immagine se non corrispondono. Essendo dentro l'area coperta dalla firma, il
+campo non è manipolabile.
+
+### Conseguenze per il resto del progetto
+
+- Il tool di firma in `tools/` produce e firma due artefatti per release, e la
+  procedura deve garantire che le due immagini vengano dallo stesso sorgente.
+- Il formato immagine (`02-image-format.md`) deve prevedere il campo con
+  l'indirizzo o l'identificativo di slot di destinazione.
+- Il bootloader imposta `VTOR` alla base della vector table dello slot scelto
+  prima di saltarci.
+- L'header precede la vector table dell'applicazione. La sua dimensione va
+  scelta in modo da lasciare la tabella allineata come richiede `VTOR`:
+  **512 byte** è una scelta pulita e con margine.
+- Il descrittore A/B vive nella regione metadati del banco 2, che con questa
+  scelta resta libera come previsto.

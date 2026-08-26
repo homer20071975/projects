@@ -51,6 +51,7 @@ con motivazioni e conseguenze:
 | Crypto | X‑CUBE‑CRYPTOLIB (ECDSA in software: niente PKA) |
 | Confidenzialità | Nessuna — immagine in chiaro, solo firmata |
 | Layout | Dual‑bank A/B — boot 48 KB, slot 80 KB |
+| Indirizzo app | Due build, una per slot — nessuno swap |
 | Canale di update | CAN / CAN‑FD, UDS su ISO‑TP |
 | TrustZone | Disabilitata, tutto Secure |
 | Root key | Hash SHA‑256 in OTP, chiave in flash |
@@ -63,10 +64,9 @@ nel documento delle decisioni:
 
 1. ⚠️ **X‑CUBE‑CRYPTOLIB supporta la serie C5?** Uscita a marzo 2026, non
    confermato. Piano B: micro‑ecc o Mbed TLS ridotta.
-2. ⚠️ **Da quale indirizzo gira l'applicazione?** I due slot stanno a
-   indirizzi diversi. Il nodo da sciogliere prima del formato immagine.
-3. ⚠️ **L'applicazione sta in 80 KB?** Se no, il dual‑bank A/B non regge.
-4. ⚠️ **Dimensione della pagina di flash**, per la granularità di WRP e HDP.
+2. ⚠️ **L'applicazione sta in 80 KB?** Se no, il dual‑bank A/B non regge.
+3. ⚠️ **Dimensione della pagina di flash**, per la granularità di WRP e HDP.
+4. ⚠️ **Quanti FDCAN** sul package a 32 pin.
 
 Dettagli e ripartizione della flash in [`docs/04-silicon-facts.md`](docs/04-silicon-facts.md).
 

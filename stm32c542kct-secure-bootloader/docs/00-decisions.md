@@ -81,9 +81,7 @@ starci insieme, da cui gli 80 KB e non 88. Indirizzi in
 
 **Vincolo per l'applicazione: 80 KB.** Da validare.
 
-**⚠️ Resta aperto** da quale indirizzo gira l'applicazione, visto che i due
-slot stanno a indirizzi diversi: due build distinte, swap fisico alla MCUboot,
-o bank swap hardware. È il nodo da sciogliere prima del formato immagine.
+**✅ Risolto** l'indirizzo di esecuzione: vedi §12.
 
 **Conseguenze:**
 - Serve un descrittore persistente che indichi lo slot attivo e lo stato
@@ -173,6 +171,32 @@ scrittura alla flash può riportarlo indietro.
 - L'header immagine porta un campo `security_version` confrontato col contatore.
 
 ---
+
+## 12. Indirizzo di esecuzione — due build, una per slot
+
+Nessuno swap, né hardware né software. Ogni release produce due artefatti,
+linkati e firmati separatamente per `0x0800_C000` e `0x0802_0000`.
+
+Scartato il **bank swap hardware**: avrebbe dato una sola build a indirizzo
+fisso duplicando il bootloader nei due banchi, ma dipende dal `SWAP_BANK`, che
+sul C5 non è confermato, e costa una scrittura di option byte per aggiornamento.
+
+Scartato lo **swap fisico** alla MCUboot: 80 KB copiati a ogni update, logorio
+della flash e una macchina a stati resistente al power loss di cui non c'è
+bisogno.
+
+**Conseguenze:**
+- Due artefatti da costruire, firmare e tracciare per release. La procedura
+  deve garantire che vengano dallo stesso sorgente.
+- L'header firmato porta l'indirizzo o l'identificativo dello slot di
+  destinazione, e il bootloader rifiuta un'immagine destinata all'altro slot.
+  È la mitigazione al rischio principale di questo schema.
+- Il tool host interroga il dispositivo con UDS `0x22` per sapere quale slot è
+  libero, e manda solo l'immagine giusta: 80 KB sul CAN, non 160.
+- Header di **512 byte** prima della vector table, per tenerla allineata come
+  richiede `VTOR`.
+
+Dettagli in [`03-memory-map.md`](03-memory-map.md).
 
 ## Nota trasversale sui test
 
