@@ -31,7 +31,7 @@ stm32c542kct-secure-bootloader/
 ├── README.md          questo file
 ├── docs/              specifiche, threat model, formato immagine
 ├── inc/               image_header.h, memory_map.h, verify.h, crypto.h
-├── src/               verify.c, crypto_stm32.c
+├── src/               verify.c, isotp.c, crypto_stm32.c, can_stm32.c
 ├── linker/            linker script e mappa di memoria
 ├── tools/             sign_image.py e verificatore di riferimento
 └── tests/             corpus, riferimento Python, confronto differenziale
@@ -69,6 +69,7 @@ Restano da chiarire, segnati con ⚠️ nei documenti:
    HDP, e se gli 8 KB di metadati bastano per la doppia copia del descrittore.
 4. ⚠️ **Quanti FDCAN** sul package a 32 pin.
 5. ⚠️ **Livello di RDP** in produzione, e se usare `0x27` SecurityAccess.
+6. ⚠️ **Identificatori CAN e temporizzazione del bus**, ancora da fissare.
 
 Dettagli e ripartizione della flash in [`docs/04-silicon-facts.md`](docs/04-silicon-facts.md).
 
@@ -102,5 +103,8 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
       self-test da eseguire sul pezzo (`tests/target/`)
 - [ ] ⚠️ Validare `src/crypto_stm32.c`: mai compilato, vedi
       `docs/05-target-backend.md`
-- [ ] Driver FDCAN, ISO‑TP e sottoinsieme UDS
+- [x] Implementare ISO‑TP (`src/isotp.c`) e il driver FDCAN
+- [ ] ⚠️ Validare `src/can_stm32.c`: mai compilato, vedi `docs/06-transport.md`
+- [ ] Sottoinsieme UDS: 0x34 / 0x36 / 0x37, ed eventuale 0x27
+- [ ] Macchina a stati dell'aggiornamento e copia bufferizzata dalla SRAM
 - [ ] Impostare la toolchain e un build "hello world" che lampeggia un LED

@@ -9,11 +9,18 @@ INC     := -I../../inc
 LDLIBS  := -lcrypto
 
 SRC := ../../src/verify.c crypto_openssl.c run_vectors.c
+ISOTP_SRC := ../../src/isotp.c ../../src/can_dlen.c test_isotp.c
+
+all: run_vectors test_isotp
 
 run_vectors: $(SRC)
 	$(CC) $(CFLAGS) $(INC) $(SRC) -o $@ $(LDLIBS)
 
-clean:
-	rm -f run_vectors
+# Il protocollo non tocca l'hardware, quindi non serve libcrypto.
+test_isotp: $(ISOTP_SRC)
+	$(CC) $(CFLAGS) $(INC) $(ISOTP_SRC) -o $@
 
-.PHONY: clean
+clean:
+	rm -f run_vectors test_isotp
+
+.PHONY: all clean

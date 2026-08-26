@@ -1,5 +1,6 @@
 run_vectors
 selftest
+test_isotp
 *.o
 __pycache__/
 *.pyc
