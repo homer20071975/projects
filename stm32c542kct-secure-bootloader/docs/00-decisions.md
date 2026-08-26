@@ -26,20 +26,26 @@ Standard de facto per il secure boot su Cortex-M. Chiave pubblica 64 byte
 
 ---
 
-## 3. Crypto — acceleratori hardware (PKA / AES / HASH / RNG)
+## 3. Crypto — ~~acceleratori hardware~~ ⚠️ DA RIVEDERE
 
-Verifica più rapida al boot e meno flash occupata dal bootloader.
+> **Aggiornamento 2026-08-26.** Il `STM32C542` **non ha il PKA** (è presente
+> solo sulla variante `STM32C5A3`). Vedi [`04-silicon-facts.md`](04-silicon-facts.md).
+> La premessa di questa decisione — accelerare in hardware la verifica ECDSA —
+> non regge: senza PKA la verifica della firma va fatta in software.
 
-**⚠️ Da confermare a datasheet:** che il `STM32C542KCT` abbia davvero PKA e
-HASH. Se il PKA manca, questa scelta va rivista — il piano B è micro-ecc
-(footprint minimo) o Mbed TLS ridotta.
+Cosa resta valido dell'hardware:
 
-**Conseguenze:**
-- Il codice di verifica è legato a questo silicio: niente esecuzione su PC.
-- Va comunque isolato dietro un'interfaccia astratta (`crypto_verify()`) per
-  poterlo sostituire con un'implementazione software nei test. Vedi §11.
+- **HASH** accelera lo SHA-256 sull'immagine, che al boot è il lavoro più
+  pesante in termini di byte processati. Questo va usato.
+- **TRNG** utile se servirà un challenge per lo `0x27` SecurityAccess UDS.
+- **AES** inutilizzato finché l'immagine resta in chiaro (§4).
 
----
+**Nuova scelta da fare:** quale implementazione software per l'ECDSA P-256.
+Decisione in sospeso.
+
+**Effetto collaterale positivo:** una implementazione software è compilabile
+anche su PC, quindi la nota trasversale sui test in fondo a questo documento
+si risolve da sola — i vettori NIST/Wycheproof diventano eseguibili sull'host.
 
 ## 4. Confidenzialità — nessuna, immagine in chiaro
 
@@ -60,9 +66,11 @@ che è il requisito del secure boot.
 Due slot applicativi completi, swap al boot, rollback immediato se la nuova
 immagine non si avvia.
 
-**⚠️ Da confermare a datasheet:** Flash totale e supporto dual-bank del pezzo.
-Servono due slot applicativi completi più il bootloader: se la flash non basta
-si ripiega su single slot + staging area.
+**✅ Confermato:** 256 KB di flash **dual-bank**. Il layout A/B è praticabile.
+
+**Vincolo che ne deriva:** con 32 KB di bootloader restano circa **96 KB per
+slot applicativo**. Da validare che l'applicazione ci stia. Ripartizione
+proposta in [`04-silicon-facts.md`](04-silicon-facts.md).
 
 **Conseguenze:**
 - Serve un descrittore persistente che indichi lo slot attivo e lo stato
@@ -144,8 +152,9 @@ Un contatore che sale e non scende mai. Nemmeno un attaccante con accesso in
 scrittura alla flash può riportarlo indietro.
 
 **Conseguenze:**
-- Il numero di incrementi è finito e va dimensionato ora: quanti
-  aggiornamenti di sicurezza prevedi nella vita del prodotto?
+- **✅ OTP confermato: 4.5 KB**, abbondante. Anche riservando 256 byte al
+  contatore in codifica unaria si hanno 2048 incrementi possibili.
+- Resta da decidere quanti byte assegnargli.
 - La codifica tipica è unaria (un bit per incremento) perché l'OTP passa solo
   da 1 a 0. Con N bit hai N incrementi.
 - L'header immagine porta un campo `security_version` confrontato col contatore.

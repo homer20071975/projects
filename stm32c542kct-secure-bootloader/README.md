@@ -48,7 +48,7 @@ con motivazioni e conseguenze:
 |---|---|
 | Toolchain | STM32CubeIDE |
 | Firma | ECDSA P‑256 + SHA‑256 |
-| Crypto | Acceleratori hardware (PKA / AES / HASH / RNG) |
+| Crypto | ⚠️ da rivedere — il pezzo non ha il PKA |
 | Confidenzialità | Nessuna — immagine in chiaro, solo firmata |
 | Layout | Dual‑bank A/B |
 | Canale di update | CAN / CAN‑FD, UDS su ISO‑TP |
@@ -61,9 +61,13 @@ con motivazioni e conseguenze:
 Tre punti restano da chiarire prima di scrivere codice, e sono segnati con ⚠️
 nel documento delle decisioni:
 
-1. **Il pezzo ha il PKA?** Se manca, la scelta sulla crypto va rivista.
-2. **La Flash basta per il dual‑bank?** Servono due slot applicativi completi.
-3. **Quanti incrementi anti‑rollback** dimensionare in OTP.
+1. ❌ **PKA assente** sul C542 — la verifica ECDSA va fatta in software.
+   Resta da scegliere quale implementazione.
+2. ✅ **Flash 256 KB dual‑bank**: A/B praticabile, circa 96 KB per slot.
+   Da validare che l'applicazione ci stia.
+3. ✅ **OTP 4.5 KB**: abbondante per hash della root key e contatore.
+
+Dettagli e ripartizione della flash in [`docs/04-silicon-facts.md`](docs/04-silicon-facts.md).
 
 ---
 
@@ -82,7 +86,9 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
 ## Prossimi passi
 
 - [x] Fissare le decisioni tecniche (`docs/00-decisions.md`)
-- [ ] Confermare a datasheet i tre punti aperti qui sopra
+- [x] Raccogliere i dati del silicio (`docs/04-silicon-facts.md`)
+- [ ] Riconfermare i dati sul PDF ufficiale del datasheet
+- [ ] Scegliere l'implementazione ECDSA software
 - [ ] Scrivere il threat model (`docs/01-threat-model.md`)
 - [ ] Definire il formato dell'header immagine (`docs/02-image-format.md`)
 - [ ] Definire la mappa di memoria (`docs/03-memory-map.md`)
