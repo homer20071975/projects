@@ -48,11 +48,17 @@ def patch_u32(image, offset, value):
     return bytes(data)
 
 
-def build_cases(key):
-    """Genera il corpus. `key` è la chiave privata di root."""
+def build_cases(key, payload=DEFAULT_PAYLOAD, compact=False):
+    """
+    Genera il corpus. `key` è la chiave privata di root.
+
+    Con `compact` si omette il vettore da 100 KB e conviene passare un
+    `payload` piccolo: serve per il self-test sul target, dove il corpus va
+    compilato dentro il binario.
+    """
     pub = sbl_crypto.public_key_raw(key)
     otp = hashlib.sha256(pub).digest()
-    good = make_image(key)
+    good = make_image(key, payload=payload)
 
     def case(name, image, expected, otp_secver=0, product_id=0x1,
              pubkey=None, otp_hash=None, area_base=fmt.EXEC_BASE,
@@ -64,11 +70,9 @@ def build_cases(key):
         # --- accettate ---
         case("valida", good, fmt.OK),
         case("secver_uguale_al_contatore",
-             make_image(key, security_version=7), fmt.OK, otp_secver=7),
+             make_image(key, payload=payload, security_version=7), fmt.OK, otp_secver=7),
         case("secver_maggiore_del_contatore",
-             make_image(key, security_version=9), fmt.OK, otp_secver=3),
-        case("payload_di_dimensione_massima",
-             make_image(key, payload=b"\x5A" * fmt.MAX_PAYLOAD), fmt.OK),
+             make_image(key, payload=payload, security_version=9), fmt.OK, otp_secver=3),
         case("payload_di_un_solo_byte",
              make_image(key, payload=b"\x01"), fmt.OK),
 
@@ -92,7 +96,7 @@ def build_cases(key):
         case("image_size_zero",
              patch_u32(good, 0x008, 0), fmt.ERR_IMAGE_SIZE),
         case("image_size_oltre_i_byte_disponibili",
-             patch_u32(good, 0x008, 60000), fmt.ERR_IMAGE_SIZE),
+             patch_u32(good, 0x008, len(payload) + 1000), fmt.ERR_IMAGE_SIZE),
         case("load_address_dello_staging",
              patch_u32(good, 0x00C, fmt.STAGE_BASE), fmt.ERR_LOAD_ADDRESS),
         case("entry_vtor_non_allineato",
@@ -117,7 +121,7 @@ def build_cases(key):
         case("payload_hash_alterato", tamper(good, 0x020),
              fmt.ERR_SIGNATURE),
         case("secver_alzata_senza_rifirmare",
-             patch_u32(make_image(key, security_version=1), 0x014, 999),
+             patch_u32(make_image(key, payload=payload, security_version=1), 0x014, 999),
              fmt.ERR_SIGNATURE),
         case("product_id_alterato_senza_rifirmare",
              patch_u32(good, 0x01C, 0x99), fmt.ERR_SIGNATURE),
@@ -126,7 +130,7 @@ def build_cases(key):
 
         # --- politica: passi 9-10 ---
         case("rollback_a_versione_precedente",
-             make_image(key, security_version=2), fmt.ERR_SECURITY_VERSION,
+             make_image(key, payload=payload, security_version=2), fmt.ERR_SECURITY_VERSION,
              otp_secver=5),
         case("prodotto_diverso", good, fmt.ERR_PRODUCT_ID, product_id=0x2),
 
@@ -134,7 +138,7 @@ def build_cases(key):
         case("payload_primo_byte_alterato",
              tamper(good, fmt.HEADER_SIZE), fmt.ERR_PAYLOAD_HASH),
         case("payload_byte_centrale_alterato",
-             tamper(good, fmt.HEADER_SIZE + 2000), fmt.ERR_PAYLOAD_HASH),
+             tamper(good, fmt.HEADER_SIZE + len(payload) // 2), fmt.ERR_PAYLOAD_HASH),
         case("payload_ultimo_byte_alterato",
              tamper(good, len(good) - 1), fmt.ERR_PAYLOAD_HASH),
     ]
@@ -142,10 +146,17 @@ def build_cases(key):
     # Firma valida ma prodotta da una chiave che non e' la root: la firma e'
     # ineccepibile in se', ma non risale alla radice di fiducia.
     altra = sbl_crypto.generate_key()
-    hdr = fmt.build(DEFAULT_PAYLOAD, fmt.EXEC_BASE, 5, 0x01020304, 0x1)
+    hdr = fmt.build(payload, fmt.EXEC_BASE, 5, 0x01020304, 0x1)
     hdr.signature = sbl_crypto.sign(altra, hdr.signed_region())
     cases.append(case("firma_di_un_altra_chiave",
-                      hdr.pack() + DEFAULT_PAYLOAD, fmt.ERR_SIGNATURE))
+                      hdr.pack() + payload, fmt.ERR_SIGNATURE))
+
+    if not compact:
+        # 100 KB: prezioso su host, improponibile da compilare dentro il
+        # binario di self-test del target.
+        cases.append(case("payload_di_dimensione_massima",
+                          make_image(key, payload=b"\x5A" * fmt.MAX_PAYLOAD),
+                          fmt.OK))
 
     return cases
 

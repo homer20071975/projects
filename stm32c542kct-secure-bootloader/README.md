@@ -31,7 +31,7 @@ stm32c542kct-secure-bootloader/
 ├── README.md          questo file
 ├── docs/              specifiche, threat model, formato immagine
 ├── inc/               image_header.h, memory_map.h, verify.h, crypto.h
-├── src/               verify.c — i dodici passi
+├── src/               verify.c, crypto_stm32.c
 ├── linker/            linker script e mappa di memoria
 ├── tools/             sign_image.py e verificatore di riferimento
 └── tests/             corpus, riferimento Python, confronto differenziale
@@ -62,7 +62,8 @@ con motivazioni e conseguenze:
 Restano da chiarire, segnati con ⚠️ nei documenti:
 
 1. ⚠️ **X‑CUBE‑CRYPTOLIB supporta la serie C5?** Uscita a marzo 2026, non
-   confermato. Piano B: micro‑ecc o Mbed TLS ridotta.
+   confermato. È la domanda che viene prima di tutte: se il supporto manca,
+   `src/crypto_stm32.c` va riscritto su micro‑ecc o Mbed TLS ridotta.
 2. ⚠️ **L'applicazione sta in 100 KB?**
 3. ⚠️ **Dimensione della pagina di flash.** Determina la granularità di WRP e
    HDP, e se gli 8 KB di metadati bastano per la doppia copia del descrittore.
@@ -97,6 +98,9 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
 - [x] Implementare la verifica in C (`src/verify.c`) e il confronto
       differenziale contro il riferimento Python
 - [ ] Aggiungere i vettori ufficiali NIST/Wycheproof per ECDSA P‑256
-- [ ] Backend crypto per il target su X‑CUBE‑CRYPTOLIB (`src/crypto_stm32.c`)
+- [x] Scrivere il backend per il target (`src/crypto_stm32.c`) e il
+      self-test da eseguire sul pezzo (`tests/target/`)
+- [ ] ⚠️ Validare `src/crypto_stm32.c`: mai compilato, vedi
+      `docs/05-target-backend.md`
 - [ ] Driver FDCAN, ISO‑TP e sottoinsieme UDS
 - [ ] Impostare la toolchain e un build "hello world" che lampeggia un LED

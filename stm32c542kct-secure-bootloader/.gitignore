@@ -1,4 +1,5 @@
 run_vectors
+selftest
 *.o
 __pycache__/
 *.pyc

@@ -33,6 +33,16 @@
 int sbl_sha256(const uint8_t *data, size_t len, uint8_t out[32]);
 
 /*
+ * Inizializza il backend. Da chiamare una volta prima di ogni altra funzione
+ * di questo header.
+ *
+ * Sul target accende l'acceleratore HASH e inizializza la cryptolib. Il
+ * backend di test su host non ne ha bisogno e restituisce SBL_CRYPTO_OK
+ * senza fare nulla.
+ */
+int sbl_crypto_init(void);
+
+/*
  * Verifica ECDSA su curva P-256 con digest SHA-256.
  *
  *   pubkey     X || Y, 64 byte, coordinate non compresse

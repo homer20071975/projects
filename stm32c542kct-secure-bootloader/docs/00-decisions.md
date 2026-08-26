@@ -46,12 +46,20 @@ non c'è, il ripiego è micro-ecc (circa 6 KB, solo ECC) o Mbed TLS ridotta.
 - **TRNG** se servirà un challenge per lo `0x27` SecurityAccess UDS.
 - **AES** inutilizzato finché l'immagine resta in chiaro (§4).
 
-**Conseguenza sui test.** La cryptolib ST non compila su PC, quindi la verifica
-firma resta non testabile fuori dal target. La mitigazione descritta in fondo a
-questo documento diventa quindi necessaria, non opzionale: interfaccia
-`inc/crypto.h` con un backend software di sola verifica usato **esclusivamente
-nei test su host**, e un test di coerenza sul target che confronta i due
-risultati sugli stessi vettori.
+**Conseguenza sui test — mitigazione realizzata.** La cryptolib ST non compila
+su PC, quindi la verifica firma non sarebbe testabile fuori dal target. La
+mitigazione prevista è stata implementata:
+
+- `inc/crypto.h` isola le primitive dietro un'interfaccia sottile;
+- `tests/host/crypto_openssl.c` la realizza con OpenSSL, e
+  `tests/test_differential.py` esegue **il codice C vero del bootloader** su
+  PC confrontandolo con il riferimento Python su 33 vettori;
+- `tests/target/selftest.c` esegue lo stesso corpus **sul pezzo** con il
+  backend vero, che è ciò che dimostra che cryptolib e OpenSSL concordano.
+
+Il backend per il target è in `src/crypto_stm32.c`. ⚠️ **Scritto ma mai
+compilato**: vedi [`05-target-backend.md`](05-target-backend.md) per la lista
+di cosa verificare.
 
 ## 4. Confidenzialità — nessuna, immagine in chiaro
 

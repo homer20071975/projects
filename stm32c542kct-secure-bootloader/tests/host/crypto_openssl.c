@@ -121,3 +121,9 @@ bool sbl_ecdsa_p256_verify(const uint8_t pubkey[64],
     OPENSSL_free(der);
     return ok;
 }
+
+int sbl_crypto_init(void)
+{
+    /* Il backend OpenSSL non ha nulla da inizializzare. */
+    return SBL_CRYPTO_OK;
+}

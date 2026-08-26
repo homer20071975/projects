@@ -15,3 +15,8 @@ python3 tests/test_image_format.py
 echo
 echo "== confronto differenziale C / Python =="
 python3 tests/test_differential.py
+echo
+echo "== self-test del target, compilato su host =="
+make -C tests/target regen >/dev/null
+make -C tests/target >/dev/null
+./tests/target/selftest

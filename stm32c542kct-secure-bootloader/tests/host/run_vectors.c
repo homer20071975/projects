@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "verify.h"
+#include "crypto.h"
 
 #define MAX_IMAGE (128u * 1024u)
 #define HEX_MAX   256
@@ -59,6 +60,11 @@ int main(int argc, char **argv)
 
     if (argc != 3) {
         fprintf(stderr, "uso: %s <manifest> <dir>\n", argv[0]);
+        return 2;
+    }
+
+    if (sbl_crypto_init() != SBL_CRYPTO_OK) {
+        fprintf(stderr, "backend crittografico non inizializzato\n");
         return 2;
     }
 
