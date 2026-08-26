@@ -67,29 +67,41 @@ che è il requisito del secure boot.
 
 ---
 
-## 5. Layout — dual-bank A/B
+## 5. Layout — bootloader + esecuzione + staging
 
-Due slot applicativi completi, swap al boot, rollback immediato se la nuova
-immagine non si avvia.
+> **Storia della decisione.** Si era partiti con il dual-bank A/B a due slot.
+> È stato sostituito dopo aver confermato che **in campo il bootloader resta
+> raggiungibile via CAN** anche con l'applicazione in crash: cade così il
+> valore principale dell'A/B, il rollback automatico alla versione precedente.
 
-**✅ Confermato:** 256 KB di flash **dual-bank**. Il layout A/B è praticabile.
+Un bootloader, una sola area di esecuzione, un'area di staging per il download
+e la validazione.
 
-**Ripartizione fissata:** bootloader 48 KB, slot A e B da **80 KB ciascuno**,
-48 KB di metadati e spare. Ogni banco è 128 KB e bootloader più slot A devono
-starci insieme, da cui gli 80 KB e non 88. Indirizzi in
-[`03-memory-map.md`](03-memory-map.md).
+**Ripartizione:** bootloader 48 KB, esecuzione 100 KB, staging 100 KB,
+metadati 8 KB. Indirizzi in [`03-memory-map.md`](03-memory-map.md).
 
-**Vincolo per l'applicazione: 80 KB.** Da validare.
+**Cosa si guadagna rispetto all'A/B:**
+- **100 KB per l'applicazione invece di 80.** Con l'A/B bootloader e slot A
+  dovevano stare insieme nei 128 KB del banco 1; qui quel vincolo non c'è.
+- **Una sola build a indirizzo fisso** invece di due artefatti linkati e
+  firmati separatamente. Cade tutta la decisione §12.
 
-**✅ Risolto** l'indirizzo di esecuzione: vedi §12.
+**Cosa si perde:**
+- **Il rollback alla versione precedente.** La copia sovrascrive il vecchio
+  firmware. Se la nuova immagine è firmata correttamente ma va in crash a
+  runtime, non c'è niente a cui tornare.
+- **Doppia scrittura di flash** per aggiornamento: prima staging, poi copia.
 
-**Conseguenze:**
-- Serve un descrittore persistente che indichi lo slot attivo e lo stato
-  (`pending` / `confirmed` / `failed`).
-- L'applicazione deve confermare il proprio avvio, altrimenti al reset
-  successivo il bootloader torna allo slot precedente.
+**La rete di sicurezza che sostituisce il rollback:** dopo N tentativi di
+avvio non confermati il bootloader smette di provare e **resta in modalità
+update in ascolto sul CAN**. Regge perché il bootloader non si autoaggiorna e
+resta sempre integro. ⚠️ **Se il presupposto della raggiungibilità in campo
+dovesse cambiare, questa decisione va rivista.**
 
----
+**⚠️ Vincolo tecnico sulla copia:** sugli STM32 dual-bank non si preleva
+codice — né si leggono dati — da un banco in corso di programmazione. La
+routine di copia gira dalla SRAM e bufferizza in RAM, serializzando lettura e
+scrittura. Dettagli in [`03-memory-map.md`](03-memory-map.md).
 
 ## 6. Canale di update — CAN / CAN-FD, UDS su ISO-TP
 
@@ -172,64 +184,25 @@ scrittura alla flash può riportarlo indietro.
 
 ---
 
-## 12. Indirizzo di esecuzione — due build, una per slot
+## 12. Indirizzo di esecuzione — ~~due build, una per slot~~ SUPERATA
 
-Nessuno swap, né hardware né software. Ogni release produce due artefatti,
-linkati e firmati separatamente per `0x0800_C000` e `0x0802_0000`.
+Decisione **annullata** dalla §5 nella sua forma attuale. Con una sola area di
+esecuzione l'applicazione ha un indirizzo fisso — vector table a
+`0x0800_C200` — e serve **una sola build**.
 
-Scartato il **bank swap hardware**: avrebbe dato una sola build a indirizzo
-fisso duplicando il bootloader nei due banchi, ma dipende dal `SWAP_BANK`, che
-sul C5 non è confermato, e costa una scrittura di option byte per aggiornamento.
+Resta valido un solo elemento di quella decisione: il campo `load_address`
+nell'header firmato, che il bootloader confronta con l'area attesa. Non serve
+più a distinguere due slot, ma continua a impedire che un'immagine costruita
+per un layout diverso venga accettata. Vedi [`02-image-format.md`](02-image-format.md).
 
-Scartato lo **swap fisico** alla MCUboot: 80 KB copiati a ogni update, logorio
-della flash e una macchina a stati resistente al power loss di cui non c'è
-bisogno.
+## 13. Riesame del layout — chiuso
 
-**Conseguenze:**
-- Due artefatti da costruire, firmare e tracciare per release. La procedura
-  deve garantire che vengano dallo stesso sorgente.
-- L'header firmato porta l'indirizzo o l'identificativo dello slot di
-  destinazione, e il bootloader rifiuta un'immagine destinata all'altro slot.
-  È la mitigazione al rischio principale di questo schema.
-- Il tool host interroga il dispositivo con UDS `0x22` per sapere quale slot è
-  libero, e manda solo l'immagine giusta: 80 KB sul CAN, non 160.
-- Header di **512 byte** prima della vector table, per tenerla allineata come
-  richiede `VTOR`.
+Il riesame è concluso: si passa a esecuzione + staging. La §5 è stata
+riscritta di conseguenza, la §12 è decaduta.
 
-Dettagli in [`03-memory-map.md`](03-memory-map.md).
-
-## 13. Layout — ⚠️ IN RIESAME: A/B oppure esecuzione + staging
-
-L'assetto attuale resta l'A/B di §5 e §12, ma è in valutazione un'alternativa:
-**bootloader + una sola area di esecuzione + un'area di staging**, con copia
-staging → esecuzione dopo la verifica.
-
-| | A/B (§5, §12) | Esecuzione + staging |
-|---|---|---|
-| Spazio per l'applicazione | 80 KB | ~100 KB |
-| Artefatti per release | due, firmati separatamente | uno |
-| Attivazione | istantanea | copia di ~100 KB |
-| Rollback alla versione precedente | sì | no |
-| Scritture flash per aggiornamento | 1× | 2× |
-| Rischio di mattonare | nullo | nullo |
-
-Con l'A/B gli slot scendono a 80 KB perché bootloader e slot A devono stare
-insieme nei 128 KB del banco 1. Lo schema con staging non ha quel vincolo, da
-cui i ~20 KB in più per l'applicazione.
-
-**⚠️ Attenzione tecnica sullo staging:** sugli STM32 dual‑bank non si può
-eseguire codice da un banco mentre lo si cancella o programma. O la routine di
-copia gira dalla SRAM, oppure il layout va disposto in modo da scrivere sempre
-nell'altro banco (bootloader e staging nel banco 1, esecuzione nel banco 2, al
-prezzo di un bootloader da 24 KB). Da confermare sul reference manual del C5.
-
-**Il dato che decide:** in campo, un dispositivo la cui applicazione non parte
-resta interrogabile via CAN? Se sì, il rollback vale poco e i 20 KB in più
-contano di più. Se il modulo sta dietro un gateway che dialoga solo con
-l'applicativo funzionante, il rollback vale molto.
-
-**Verifica in corso da parte del committente.** Fino ad allora resta valido
-l'A/B.
+**Il dato che ha deciso:** in campo il bootloader resta raggiungibile via CAN
+anche quando l'applicazione non parte. Un aggiornamento andato male si risolve
+mandandone un altro, quindi il rollback automatico non vale i 20 KB che costa.
 
 ## Nota trasversale sui test
 

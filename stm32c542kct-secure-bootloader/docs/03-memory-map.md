@@ -3,39 +3,70 @@
 Target: **STM32C542KCT** — 256 KB di flash dual‑bank, 64 KB di SRAM, 4.5 KB di OTP.
 
 > I valori del silicio vengono da [`04-silicon-facts.md`](04-silicon-facts.md) e
-> sono ancora **da riconfermare sul PDF ufficiale** del datasheet.
+> sono ancora **da riconfermare sul PDF ufficiale**.
+
+Layout: **bootloader + area di esecuzione + area di staging** (§13 di
+[`00-decisions.md`](00-decisions.md)).
 
 ---
 
 ## Ripartizione della flash
 
-Ogni banco è 128 KB. Bootloader e slot A stanno entrambi nel banco 1, quindi la
-loro somma non può superare i 128 KB.
-
 ```
-                     ┌──────────────────────────────┐
-BANCO 1  0x0800_0000 │ Bootloader            48 KB  │
-                     │   .. 0x0800_BFFF             │
-         0x0800_C000 ├──────────────────────────────┤
-                     │ Slot A                80 KB  │
-                     │   .. 0x0801_FFFF             │
-                     ╞══════════════════════════════╡
-BANCO 2  0x0802_0000 │ Slot B                80 KB  │
-                     │   .. 0x0803_3FFF             │
-         0x0803_4000 ├──────────────────────────────┤
-                     │ Metadati e spare      48 KB  │
-                     │   .. 0x0803_FFFF             │
-                     └──────────────────────────────┘
+0x0800_0000  ┌────────────────────────────────┐
+             │ Bootloader              48 KB  │
+0x0800_BFFF  └────────────────────────────────┘
+0x0800_C000  ┌────────────────────────────────┐
+             │ Area di esecuzione     100 KB  │
+             │   header 512 B + applicazione  │
+0x0802_4FFF  └────────────────────────────────┘
+0x0802_5000  ┌────────────────────────────────┐
+             │ Area di staging        100 KB  │
+0x0803_DFFF  └────────────────────────────────┘
+0x0803_E000  ┌────────────────────────────────┐
+             │ Metadati                 8 KB  │
+0x0803_FFFF  └────────────────────────────────┘
 ```
 
 | Regione | Base | Fine | Dimensione |
 |---|---|---|---|
 | Bootloader | `0x0800_0000` | `0x0800_BFFF` | 48 KB |
-| Slot A | `0x0800_C000` | `0x0801_FFFF` | 80 KB |
-| Slot B | `0x0802_0000` | `0x0803_3FFF` | 80 KB |
-| Metadati e spare | `0x0803_4000` | `0x0803_FFFF` | 48 KB |
+| Esecuzione | `0x0800_C000` | `0x0802_4FFF` | 100 KB |
+| Staging | `0x0802_5000` | `0x0803_DFFF` | 100 KB |
+| Metadati | `0x0803_E000` | `0x0803_FFFF` | 8 KB |
 
-**Vincolo per l'applicazione: 80 KB.**
+**Vincolo per l'applicazione: 100 KB meno i 512 byte di header, quindi 102 400
+byte scarsi di codice e dati.**
+
+L'applicazione è **una sola build a indirizzo fisso**: vector table a
+`0x0800_C200`, subito dopo l'header. L'indirizzo è allineato a 512 byte, come
+richiede `VTOR`.
+
+---
+
+## Il confine di banco cade dentro l'area di esecuzione
+
+Il banco 2 inizia a `0x0802_0000`, che sta dentro l'area di esecuzione. Non è
+un problema, ma vincola **come** si fa la copia.
+
+Sugli STM32 dual‑bank non si può prelevare codice da un banco mentre lo si
+cancella o programma. E anche i **dati** non si possono leggere da un banco in
+corso di programmazione: copiare direttamente staging → esecuzione romperebbe
+proprio dove le due aree condividono il banco 2.
+
+**Soluzione: copia bufferizzata dalla SRAM.**
+
+1. La routine di copia viene ricollocata in SRAM ed eseguita da lì.
+2. Legge un blocco dallo staging in un buffer in RAM. In questo momento non
+   c'è nessuna operazione di scrittura in corso, quindi la lettura è valida.
+3. Cancella e programma la pagina di destinazione attingendo al buffer. Non
+   serve leggere flash: né il codice (è in RAM) né i dati (sono nel buffer).
+
+Serializzando lettura e scrittura il problema del read‑while‑write sparisce, e
+il layout diventa libero da vincoli di banco. Costo: qualche centinaio di byte
+di codice in SRAM più il buffer, trascurabili sui 64 KB disponibili.
+
+⚠️ Da confermare sul reference manual del C5, ma è la regola generale su STM32.
 
 ---
 
@@ -47,8 +78,12 @@ BANCO 2  0x0802_0000 │ Slot B                80 KB  │
 | Chiave pubblica di root | 64 byte, verificata contro l'hash in OTP a ogni boot |
 | Crypto | X‑CUBE‑CRYPTOLIB, ECDSA P‑256 in software |
 | Driver | Flash, FDCAN, ISO‑TP, sottoinsieme UDS |
+| Routine di copia | Ricollocata in SRAM all'occorrenza |
 
 Protetta in scrittura con **WRP** e, per la parte sensibile, con **HDP**.
+
+Il bootloader **non si autoaggiorna**: resta sempre integro, ed è questo che
+rende il dispositivo irrecuperabile solo in caso di guasto hardware.
 
 ---
 
@@ -56,17 +91,18 @@ Protetta in scrittura con **WRP** e, per la parte sensibile, con **HDP**.
 
 | Contenuto | Note |
 |---|---|
-| Descrittore A/B | Slot attivo e stato: `pending` / `confirmed` / `failed` |
-| Contatore tentativi | Quante volte si è provato ad avviare lo slot `pending` |
-| Spare | Margine per crescere: log di update, contatori diagnostici |
+| Stato dell'immagine | `valid` / `pending` / `failed` |
+| Contatore tentativi | Quante volte si è provato ad avviare senza conferma |
+| Stato della copia | Per riprendere una copia interrotta dal power loss |
+| Spare | Log di update, contatori diagnostici |
 
-⚠️ Il descrittore va scritto in modo resistente a un power loss a metà
-scrittura: due copie alternate con un contatore di sequenza e un CRC, in modo
-che ne resti sempre una valida.
+Scritto in **doppia copia alternata**, ciascuna con contatore di sequenza e
+CRC, così che un'interruzione a metà scrittura ne lasci sempre una valida.
 
-⚠️ **Dimensione della pagina di flash ancora ignota** — determina la
-granularità di cancellazione, quindi quanto spazio serve realmente al
-descrittore, e la granularità di WRP e HDP. Da leggere sul reference manual.
+⚠️ **Gli 8 KB assegnati presuppongono una pagina di flash da 2 KB o meno**,
+per averne almeno due a disposizione. Se la pagina fosse da 8 KB servirebbero
+16 KB e i confini andrebbero spostati. **Da leggere sul reference manual**: la
+dimensione della pagina determina anche la granularità di WRP e HDP.
 
 ---
 
@@ -77,71 +113,37 @@ descrittore, e la granularità di WRP e HDP. Da leggere sul reference manual.
 | Hash SHA‑256 della root key | 32 byte | Radice di fiducia, scritta in produzione |
 | Contatore anti‑rollback | da definire | Codifica unaria: un bit per incremento |
 
-Con 256 byte assegnati al contatore si ottengono 2048 incrementi, largamente
-sufficienti. Resta da fissare il numero definitivo.
+Con 256 byte assegnati al contatore si ottengono 2048 incrementi.
 
 ---
 
-## Indirizzo di esecuzione dell'applicazione — risolto
+## Ciclo di aggiornamento
 
-Slot A e slot B stanno a indirizzi diversi (`0x0800_C000` e `0x0802_0000`), e un
-firmware linkato per uno non gira all'altro.
+```
+  download          verifica          copia            conferma
+staging ←── CAN    firma + versione   staging→exec    l'app conferma
+                   sullo staging      via SRAM        entro N boot
+```
 
-**Decisione: due build distinte, una per slot. Nessuno swap.**
+1. Il tool host apre la sessione UDS e trasferisce l'immagine nello **staging**
+   con `0x34` / `0x36` / `0x37`.
+2. Il bootloader verifica **sullo staging**: firma ECDSA, `security_version`
+   contro il contatore OTP, coerenza di `product_id` e dimensioni.
+3. Solo se la verifica passa, marca lo stato `pending` e copia staging →
+   esecuzione, bufferizzando dalla SRAM.
+4. Al reset verifica di nuovo l'area di esecuzione e salta.
+5. L'applicazione conferma il proprio avvio; lo stato passa a `valid` e il
+   contatore anti‑rollback in OTP viene incrementato.
 
-Scartate le due alternative:
+### Cosa succede se qualcosa va storto
 
-- **Bank swap hardware** (`SWAP_BANK`) avrebbe dato una sola build a indirizzo
-  fisso, duplicando il bootloader all'inizio dei due banchi. Scartata perché
-  dipende da una funzione del silicio non confermata sul C5, e perché ogni
-  aggiornamento costerebbe una scrittura di option byte.
-- **Swap fisico del contenuto** alla MCUboot avrebbe copiato 80 KB a ogni
-  aggiornamento: logorio della flash, tempi lunghi e una macchina a stati
-  resistente al power loss che è la parte dove si annidano i bug.
+| Guasto | Comportamento |
+|---|---|
+| Firma non valida sullo staging | L'immagine viene rifiutata, l'area di esecuzione non viene toccata |
+| Power loss durante la copia | Lo staging è ancora integro: al boot successivo la copia riprende |
+| L'applicazione non conferma | Dopo N tentativi il bootloader **resta in modalità update** in attesa sul CAN |
 
-### Come funziona
-
-Due linker script e due artefatti per ogni release:
-
-| Artefatto | Linkato a | Firmato |
-|---|---|---|
-| `app_slot_a.bin` | `0x0800_C000` | sì, separatamente |
-| `app_slot_b.bin` | `0x0802_0000` | sì, separatamente |
-
-**Flusso di aggiornamento:**
-
-1. Il tool host chiede al dispositivo quale slot è inattivo — UDS `0x22`
-   ReadDataByIdentifier, con un DID dedicato.
-2. Manda l'immagine corrispondente a quello slot, non entrambe: sul CAN
-   viaggiano 80 KB, non 160.
-3. Trasferimento con `0x34` / `0x36` / `0x37`.
-4. Il bootloader scrive nello slot inattivo, verifica firma e versione, e
-   marca lo slot come `pending`.
-5. Al reset tenta l'avvio dello slot `pending`; l'applicazione conferma il
-   proprio avvio e lo stato passa a `confirmed`.
-6. Se la conferma non arriva entro N tentativi, si torna allo slot precedente.
-
-### Il rischio, e come si chiude
-
-Il rischio dello schema a due build è mandare l'immagine sbagliata: un binario
-linkato per lo slot A scritto nello slot B non parte, e il dispositivo resta
-sul vecchio firmware o peggio.
-
-**Mitigazione: l'indirizzo di destinazione va dentro l'header firmato.** Il
-bootloader confronta il campo con lo slot in cui sta scrivendo e rifiuta
-l'immagine se non corrispondono. Essendo dentro l'area coperta dalla firma, il
-campo non è manipolabile.
-
-### Conseguenze per il resto del progetto
-
-- Il tool di firma in `tools/` produce e firma due artefatti per release, e la
-  procedura deve garantire che le due immagini vengano dallo stesso sorgente.
-- Il formato immagine (`02-image-format.md`) deve prevedere il campo con
-  l'indirizzo o l'identificativo di slot di destinazione.
-- Il bootloader imposta `VTOR` alla base della vector table dello slot scelto
-  prima di saltarci.
-- L'header precede la vector table dell'applicazione. La sua dimensione va
-  scelta in modo da lasciare la tabella allineata come richiede `VTOR`:
-  **512 byte** è una scelta pulita e con margine.
-- Il descrittore A/B vive nella regione metadati del banco 2, che con questa
-  scelta resta libera come previsto.
+L'ultimo caso è la rete di sicurezza che sostituisce il rollback: non essendoci
+una versione precedente a cui tornare, il bootloader smette di provare e si
+mette in ascolto, perché è stato confermato che **in campo resta raggiungibile
+via CAN**. Se quel presupposto dovesse cambiare, va rivista la §13.

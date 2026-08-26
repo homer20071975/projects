@@ -50,8 +50,8 @@ con motivazioni e conseguenze:
 | Firma | ECDSA P‑256 + SHA‑256 |
 | Crypto | X‑CUBE‑CRYPTOLIB (ECDSA in software: niente PKA) |
 | Confidenzialità | Nessuna — immagine in chiaro, solo firmata |
-| Layout | Dual‑bank A/B — boot 48 KB, slot 80 KB ⚠️ in riesame |
-| Indirizzo app | Due build, una per slot — nessuno swap |
+| Layout | Boot 48 KB + esecuzione 100 KB + staging 100 KB |
+| Indirizzo app | Fisso, una sola build — vector table a `0x0800_C200` |
 | Canale di update | CAN / CAN‑FD, UDS su ISO‑TP |
 | TrustZone | Disabilitata, tutto Secure |
 | Root key | Hash SHA‑256 in OTP, chiave in flash |
@@ -59,17 +59,15 @@ con motivazioni e conseguenze:
 | Rotazione chiavi | Nessuna, chiave singola |
 | Anti‑rollback | Contatore monotono in OTP |
 
-Tre punti restano da chiarire prima di scrivere codice, e sono segnati con ⚠️
-nel documento delle decisioni:
+Restano da chiarire, segnati con ⚠️ nei documenti:
 
 1. ⚠️ **X‑CUBE‑CRYPTOLIB supporta la serie C5?** Uscita a marzo 2026, non
    confermato. Piano B: micro‑ecc o Mbed TLS ridotta.
-2. ⚠️ **A/B o esecuzione + staging?** Lo staging dà ~100 KB invece di 80 e
-   una sola build, ma perde il rollback alla versione precedente. Decide se
-   il dispositivo resta raggiungibile via CAN con l'applicazione in crash.
-3. ⚠️ **L'applicazione sta in 80 KB?** Se no, il dual‑bank A/B non regge.
-4. ⚠️ **Dimensione della pagina di flash**, per la granularità di WRP e HDP.
-5. ⚠️ **Quanti FDCAN** sul package a 32 pin.
+2. ⚠️ **L'applicazione sta in 100 KB?**
+3. ⚠️ **Dimensione della pagina di flash.** Determina la granularità di WRP e
+   HDP, e se gli 8 KB di metadati bastano per la doppia copia del descrittore.
+4. ⚠️ **Quanti FDCAN** sul package a 32 pin.
+5. ⚠️ **Livello di RDP** in produzione, e se usare `0x27` SecurityAccess.
 
 Dettagli e ripartizione della flash in [`docs/04-silicon-facts.md`](docs/04-silicon-facts.md).
 
@@ -93,6 +91,7 @@ pezzo specifico (`STM32C542KCT6`), in particolare:
 - [x] Raccogliere i dati del silicio (`docs/04-silicon-facts.md`)
 - [ ] Riconfermare i dati sul PDF ufficiale del datasheet
 - [x] Scrivere il threat model (`docs/01-threat-model.md`)
-- [ ] Definire il formato dell'header immagine (`docs/02-image-format.md`)
+- [x] Definire il formato dell'header immagine (`docs/02-image-format.md`)
 - [x] Definire la mappa di memoria (`docs/03-memory-map.md`)
+- [ ] Scrivere `inc/image_header.h` e il tool di firma in `tools/`
 - [ ] Impostare la toolchain e un build "hello world" che lampeggia un LED
